@@ -161,7 +161,7 @@ class SetQuery:
         provider: str = "tcgplayer",
         currency: str = "USD",
         finish: str = "normal",
-        category: str = "retail",
+        price_type: str = "retail",
     ) -> dict | None:
         """Get aggregate price statistics for a set.
 
@@ -174,18 +174,13 @@ class SetQuery:
             provider: Price provider (default "tcgplayer").
             currency: Currency code (default "USD").
             finish: Card finish (default "normal").
-            category: Price category (default "retail").
+            price_type: Price type (default "retail").
 
         Returns:
             Dict with total_value, avg_value, min_value, max_value,
             card_count, and date — or None if no price data exists.
         """
-        self._conn.ensure_views("cards")
-        # prices_today is a DuckDB table loaded from JSON, not a parquet view.
-        # PriceQuery._ensure() handles loading. We can't call it here directly,
-        # so we check if the table is registered and guide the user if not.
-        if "prices_today" not in self._conn._registered_views:
-            return None
+        self._conn.ensure_views("cards", "all_prices_today")
 
         sql = """
             SELECT
@@ -196,18 +191,18 @@ class SetQuery:
                 MAX(p.price) AS max_value,
                 MAX(p.date) AS date
             FROM cards c
-            JOIN prices_today p ON c.uuid = p.uuid
+            JOIN all_prices_today p ON c.uuid = p.uuid
             WHERE c.setCode = $1
               AND p.provider = $2
               AND p.currency = $3
               AND p.finish = $4
-              AND p.category = $5
+              AND p.price_type = $5
               AND p.date = (
-                  SELECT MAX(p2.date) FROM prices_today p2
+                  SELECT MAX(p2.date) FROM all_prices_today p2
               )
         """
         rows = self._conn.execute(
-            sql, [set_code.upper(), provider, currency, finish, category]
+            sql, [set_code.upper(), provider, currency, finish, price_type]
         )
         if not rows or rows[0].get("card_count", 0) == 0:
             return None

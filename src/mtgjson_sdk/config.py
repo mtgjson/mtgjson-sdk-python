@@ -32,12 +32,14 @@ PARQUET_FILES: dict[str, str] = {
     "set_booster_sheets": "parquet/setBoosterSheets.parquet",
     # Full nested
     "all_printings": "parquet/AllPrintings.parquet",
+    # Prices & SKUs
+    "all_prices_today": "parquet/AllPricesToday.parquet",
+    "all_prices": "parquet/AllPrices.parquet",
+    "tcgplayer_skus": "parquet/TcgplayerSkus.parquet",
 }
 
 #: Mapping of logical data names to CDN JSON file paths.
 JSON_FILES: dict[str, str] = {
-    "all_prices_today": "AllPricesToday.json.gz",
-    "tcgplayer_skus": "TcgplayerSkus.json.gz",
     "keywords": "Keywords.json",
     "card_types": "CardTypes.json",
     "deck_list": "DeckList.json",
