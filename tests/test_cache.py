@@ -70,11 +70,12 @@ def test_load_json_corrupt_removed(tmp_path):
 def test_load_json_corrupt_gzip_removed(tmp_path):
     """Corrupt .gz file is deleted and FileNotFoundError raised."""
     cache = CacheManager(tmp_path / "cache", offline=True)
-    corrupt_path = cache.cache_dir / "AllPricesToday.json.gz"
-    corrupt_path.write_bytes(b"this is not gzip data at all")
+    # Use a JSON file that's still in JSON_FILES (prices moved to parquet)
+    corrupt_path = cache.cache_dir / "Keywords.json"
+    corrupt_path.write_bytes(b"this is not valid json at all")
 
     with pytest.raises(FileNotFoundError, match="corrupt"):
-        cache.load_json("all_prices_today")
+        cache.load_json("keywords")
 
     assert not corrupt_path.exists()
     cache.close()

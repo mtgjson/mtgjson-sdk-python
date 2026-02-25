@@ -1,77 +1,8 @@
 """Tests for the price query module."""
 
-import io
-import json
-
 import pytest
 
-from mtgjson_sdk.queries.prices import PriceQuery, _stream_flatten_prices
-
-# === _stream_flatten_prices unit tests ===
-
-
-def _flatten_to_list(data: dict) -> list[dict]:
-    """Helper: stream-flatten to an in-memory buffer, parse back to list."""
-    buf = io.StringIO()
-    count = _stream_flatten_prices(data, buf)
-    buf.seek(0)
-    rows = [json.loads(line) for line in buf if line.strip()]
-    assert len(rows) == count
-    return rows
-
-
-def test_flatten_prices():
-    data = {
-        "card-uuid-001": {
-            "paper": {
-                "tcgplayer": {
-                    "currency": "USD",
-                    "retail": {
-                        "normal": {"2024-01-01": 1.50, "2024-01-02": 1.75},
-                        "foil": {"2024-01-01": 3.50},
-                    },
-                }
-            }
-        }
-    }
-    rows = _flatten_to_list(data)
-    assert len(rows) == 3
-    assert all(r["uuid"] == "card-uuid-001" for r in rows)
-    assert all(r["provider"] == "tcgplayer" for r in rows)
-    assert all(r["currency"] == "USD" for r in rows)
-
-    normal_rows = [r for r in rows if r["finish"] == "normal"]
-    assert len(normal_rows) == 2
-    foil_rows = [r for r in rows if r["finish"] == "foil"]
-    assert len(foil_rows) == 1
-
-
-def test_flatten_prices_empty():
-    assert _flatten_to_list({}) == []
-
-
-def test_flatten_prices_mixed_sources():
-    data = {
-        "uuid-1": {
-            "paper": {
-                "tcgplayer": {
-                    "currency": "USD",
-                    "retail": {"normal": {"2024-01-01": 1.0}},
-                }
-            },
-            "mtgo": {
-                "cardhoarder": {
-                    "currency": "USD",
-                    "retail": {"normal": {"2024-01-01": 0.05}},
-                }
-            },
-        }
-    }
-    rows = _flatten_to_list(data)
-    assert len(rows) == 2
-    sources = {r["source"] for r in rows}
-    assert sources == {"paper", "mtgo"}
-
+from mtgjson_sdk.queries.prices import PriceQuery
 
 # === PriceQuery integration tests ===
 
@@ -81,7 +12,7 @@ SAMPLE_PRICE_DATA = [
         "source": "paper",
         "provider": "tcgplayer",
         "currency": "USD",
-        "category": "retail",
+        "price_type": "retail",
         "finish": "normal",
         "date": "2024-01-01",
         "price": 1.50,
@@ -91,7 +22,7 @@ SAMPLE_PRICE_DATA = [
         "source": "paper",
         "provider": "tcgplayer",
         "currency": "USD",
-        "category": "retail",
+        "price_type": "retail",
         "finish": "normal",
         "date": "2024-01-02",
         "price": 1.75,
@@ -101,7 +32,7 @@ SAMPLE_PRICE_DATA = [
         "source": "paper",
         "provider": "tcgplayer",
         "currency": "USD",
-        "category": "retail",
+        "price_type": "retail",
         "finish": "normal",
         "date": "2024-01-03",
         "price": 2.00,
@@ -111,7 +42,7 @@ SAMPLE_PRICE_DATA = [
         "source": "paper",
         "provider": "tcgplayer",
         "currency": "USD",
-        "category": "retail",
+        "price_type": "retail",
         "finish": "foil",
         "date": "2024-01-01",
         "price": 3.50,
@@ -121,7 +52,7 @@ SAMPLE_PRICE_DATA = [
         "source": "paper",
         "provider": "tcgplayer",
         "currency": "USD",
-        "category": "retail",
+        "price_type": "retail",
         "finish": "foil",
         "date": "2024-01-03",
         "price": 4.00,
@@ -131,7 +62,7 @@ SAMPLE_PRICE_DATA = [
         "source": "paper",
         "provider": "tcgplayer",
         "currency": "USD",
-        "category": "buylist",
+        "price_type": "buylist",
         "finish": "normal",
         "date": "2024-01-03",
         "price": 0.80,
@@ -141,7 +72,7 @@ SAMPLE_PRICE_DATA = [
         "source": "paper",
         "provider": "tcgplayer",
         "currency": "USD",
-        "category": "retail",
+        "price_type": "retail",
         "finish": "normal",
         "date": "2024-01-03",
         "price": 5.00,
@@ -152,11 +83,10 @@ SAMPLE_PRICE_DATA = [
 @pytest.fixture
 def price_query(sample_db):
     """PriceQuery with sample price data loaded."""
-    sample_db.register_table_from_data("prices_today", SAMPLE_PRICE_DATA)
+    sample_db.register_table_from_data("all_prices_today", SAMPLE_PRICE_DATA)
+    sample_db.register_table_from_data("all_prices", SAMPLE_PRICE_DATA)
     pq = PriceQuery.__new__(PriceQuery)
     pq._conn = sample_db
-    pq._cache = None
-    pq._loaded = True
     return pq
 
 
@@ -180,15 +110,15 @@ def test_today_with_finish_filter(price_query):
     assert rows[0]["price"] == 4.00
 
 
-def test_today_with_category_filter(price_query):
-    rows = price_query.today("card-uuid-001", category="buylist")
-    assert all(r["category"] == "buylist" for r in rows)
+def test_today_with_price_type_filter(price_query):
+    rows = price_query.today("card-uuid-001", price_type="buylist")
+    assert all(r["price_type"] == "buylist" for r in rows)
     assert len(rows) == 1
 
 
 def test_history_all_dates(price_query):
     """history() should return all dates in chronological order."""
-    rows = price_query.history("card-uuid-001", finish="normal", category="retail")
+    rows = price_query.history("card-uuid-001", finish="normal", price_type="retail")
     assert len(rows) == 3
     dates = [r["date"] for r in rows]
     assert dates == ["2024-01-01", "2024-01-02", "2024-01-03"]
@@ -198,7 +128,7 @@ def test_history_date_range(price_query):
     rows = price_query.history(
         "card-uuid-001",
         finish="normal",
-        category="retail",
+        price_type="retail",
         date_from="2024-01-02",
         date_to="2024-01-03",
     )
@@ -211,7 +141,7 @@ def test_history_date_from_only(price_query):
     rows = price_query.history(
         "card-uuid-001",
         finish="normal",
-        category="retail",
+        price_type="retail",
         date_from="2024-01-03",
     )
     assert len(rows) == 1
@@ -269,91 +199,4 @@ def test_cheapest_printings_no_prices(sample_db):
     """Returns empty list when no price data exists."""
     pq = PriceQuery.__new__(PriceQuery)
     pq._conn = sample_db
-    pq._cache = None
-    pq._loaded = True
     assert pq.cheapest_printings() == []
-
-
-# === Streaming correctness tests ===
-
-
-def test_stream_flatten_writes_valid_ndjson_to_file(tmp_path):
-    """_stream_flatten_prices writes valid NDJSON to a real file."""
-    data = {
-        "uuid-1": {
-            "paper": {
-                "tcgplayer": {
-                    "currency": "USD",
-                    "retail": {"normal": {"2024-01-01": 1.0, "2024-01-02": 1.5}},
-                    "buylist": {"normal": {"2024-01-01": 0.5}},
-                }
-            }
-        },
-        "uuid-2": {
-            "mtgo": {
-                "cardhoarder": {
-                    "currency": "TIX",
-                    "retail": {"normal": {"2024-01-01": 0.02}},
-                }
-            }
-        },
-    }
-    out_path = tmp_path / "prices.ndjson"
-    with open(out_path, "w", encoding="utf-8") as f:
-        count = _stream_flatten_prices(data, f)
-
-    # Re-read and parse each line independently
-    lines = out_path.read_text(encoding="utf-8").strip().split("\n")
-    assert len(lines) == count
-    for line in lines:
-        row = json.loads(line)
-        assert "uuid" in row
-        assert "price" in row
-        assert isinstance(row["price"], float)
-
-
-def test_stream_flatten_count_matches_output():
-    """Returned count matches actual number of lines written."""
-    data = {
-        "u1": {
-            "paper": {
-                "tcgplayer": {
-                    "currency": "USD",
-                    "retail": {
-                        "normal": {"2024-01-01": 1.0},
-                        "foil": {"2024-01-01": 2.0, "2024-01-02": 2.5},
-                    },
-                }
-            }
-        }
-    }
-    buf = io.StringIO()
-    count = _stream_flatten_prices(data, buf)
-    buf.seek(0)
-    actual_lines = [line for line in buf if line.strip()]
-    assert count == 3
-    assert len(actual_lines) == count
-
-
-# === No-data state tests ===
-
-
-def test_today_no_price_table(sample_db):
-    """today() returns [] when prices_today table doesn't exist."""
-    pq = PriceQuery.__new__(PriceQuery)
-    pq._conn = sample_db
-    pq._cache = None
-    pq._loaded = True
-    # prices_today is NOT registered — should return []
-    result = pq.today("nonexistent-uuid")
-    assert result == []
-
-
-def test_get_no_price_table(sample_db):
-    """get() returns None when prices_today table doesn't exist."""
-    pq = PriceQuery.__new__(PriceQuery)
-    pq._conn = sample_db
-    pq._cache = None
-    pq._loaded = True
-    result = pq.get("nonexistent-uuid")
-    assert result is None

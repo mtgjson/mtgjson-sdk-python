@@ -905,15 +905,15 @@ def main():
                         f"finish={first_fin}",
                     )
 
-                # today — with category filter
-                categories = {r.get("category") for r in today_prices}
-                if categories:
-                    first_cat = next(iter(categories))
-                    today_cat = sdk.prices.today(uuid, category=first_cat)
+                # today — with price_type filter
+                price_types = {r.get("price_type") for r in today_prices}
+                if price_types:
+                    first_pt = next(iter(price_types))
+                    today_pt = sdk.prices.today(uuid, price_type=first_pt)
                     check(
-                        "prices.today category filter",
-                        len(today_cat) > 0,
-                        f"cat={first_cat}",
+                        "prices.today price_type filter",
+                        len(today_pt) > 0,
+                        f"price_type={first_pt}",
                     )
 
                 # today — as_dataframe
@@ -1004,7 +1004,7 @@ def main():
     # ══════════════════════════════════════════════════════════
     section("Set Financial Summary (EV calculation)")
 
-    if "prices_today" in sdk._conn._registered_views:
+    if "all_prices_today" in sdk._conn._registered_views:
         fin = sdk.sets.get_financial_summary("MH3")
         check(
             "get_financial_summary MH3",

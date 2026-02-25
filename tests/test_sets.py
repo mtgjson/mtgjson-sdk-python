@@ -11,7 +11,7 @@ _SET_PRICE_DATA = [
         "source": "paper",
         "provider": "tcgplayer",
         "currency": "USD",
-        "category": "retail",
+        "price_type": "retail",
         "finish": "normal",
         "date": "2024-01-03",
         "price": 2.00,
@@ -21,7 +21,7 @@ _SET_PRICE_DATA = [
         "source": "paper",
         "provider": "tcgplayer",
         "currency": "USD",
-        "category": "retail",
+        "price_type": "retail",
         "finish": "normal",
         "date": "2024-01-03",
         "price": 5.00,
@@ -31,7 +31,7 @@ _SET_PRICE_DATA = [
         "source": "paper",
         "provider": "tcgplayer",
         "currency": "USD",
-        "category": "retail",
+        "price_type": "retail",
         "finish": "normal",
         "date": "2024-01-03",
         "price": 3.00,
@@ -42,7 +42,7 @@ _SET_PRICE_DATA = [
 @pytest.fixture
 def sdk_with_prices(sdk_offline):
     """SDK fixture with price data loaded alongside cards/sets."""
-    sdk_offline._conn.register_table_from_data("prices_today", _SET_PRICE_DATA)
+    sdk_offline._conn.register_table_from_data("all_prices_today", _SET_PRICE_DATA)
     return sdk_offline
 
 
