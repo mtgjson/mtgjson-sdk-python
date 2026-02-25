@@ -117,7 +117,7 @@ class MtgjsonSDK:
             trend = sdk.prices.price_trend("uuid-here")
         """
         if self._prices is None:
-            self._prices = PriceQuery(self._conn, self._cache)
+            self._prices = PriceQuery(self._conn)
         return self._prices
 
     @property
@@ -155,7 +155,7 @@ class MtgjsonSDK:
             sku = sdk.skus.find_by_sku_id(12345)
         """
         if self._skus is None:
-            self._skus = SkuQuery(self._conn, self._cache)
+            self._skus = SkuQuery(self._conn)
         return self._skus
 
     @property

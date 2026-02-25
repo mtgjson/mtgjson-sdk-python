@@ -2,17 +2,8 @@
 
 from __future__ import annotations
 
-import json
-import logging
-import os
-import tempfile
-from pathlib import Path
-
-from ..cache import CacheManager
 from ..connection import Connection
 from ..models.submodels import TcgplayerSkus
-
-logger = logging.getLogger("mtgjson_sdk")
 
 
 class SkuQuery:
@@ -28,32 +19,12 @@ class SkuQuery:
         product_skus = sdk.skus.find_by_product_id(67890)
     """
 
-    def __init__(self, conn: Connection, cache: CacheManager) -> None:
+    def __init__(self, conn: Connection) -> None:
         self._conn = conn
-        self._cache = cache
-        self._loaded = False
 
     def _ensure(self) -> None:
-        """Load SKU data into DuckDB if not already done.
-
-        Uses streaming NDJSON to avoid holding the full flattened
-        row list in Python memory.
-        """
-        if self._loaded:
-            return
-        if "tcgplayer_skus" in self._conn._registered_views:
-            self._loaded = True
-            return
-
-        try:
-            path = self._cache.ensure_json("tcgplayer_skus")
-        except FileNotFoundError:
-            logger.warning("SKU data not available")
-            self._loaded = True
-            return
-
-        _load_skus_to_duckdb(path, self._conn)
-        self._loaded = True
+        """Register the tcgplayer_skus parquet view if not already done."""
+        self._conn.ensure_views("tcgplayer_skus")
 
     def get(
         self,
@@ -112,45 +83,3 @@ class SkuQuery:
         return self._conn.execute(
             "SELECT * FROM tcgplayer_skus WHERE productId = $1", [product_id]
         )
-
-
-def _load_skus_to_duckdb(path: Path, conn: Connection) -> None:
-    """Parse TcgplayerSkus JSON, stream-flatten to NDJSON, load into DuckDB.
-
-    Same memory optimization as prices: streams rows to NDJSON temp file
-    instead of accumulating in a Python list.
-    """
-    import gzip
-
-    if path.suffix == ".gz":
-        with gzip.open(path, "rt", encoding="utf-8") as f:
-            raw = json.load(f)
-    else:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-
-    data = raw.get("data", {})
-    del raw
-
-    tmp_fd, tmp_path = tempfile.mkstemp(suffix=".ndjson")
-    try:
-        count = 0
-        with os.fdopen(tmp_fd, "w", encoding="utf-8", buffering=1024 * 1024) as ndjson:
-            for uuid, skus in data.items():
-                if not isinstance(skus, list):
-                    continue
-                for sku in skus:
-                    if isinstance(sku, dict):
-                        row = dict(sku)
-                        row["uuid"] = uuid
-                        ndjson.write(json.dumps(row, separators=(",", ":")))
-                        ndjson.write("\n")
-                        count += 1
-        del data
-
-        if count > 0:
-            conn.register_table_from_ndjson("tcgplayer_skus", tmp_path)
-    finally:
-        try:
-            os.unlink(tmp_path)
-        except OSError:
-            pass
