@@ -136,10 +136,20 @@ class Connection:
         Introspects the parquet schema on first registration and builds
         the view SQL dynamically, so the SDK adapts to upstream schema
         changes without code updates.
+
+        If the backing file is not available (i.e. offline mode with no
+        cache), the view is silently skipped.  Downstream queries that
+        reference a missing view will receive empty results or None.
         """
         if view_name in self._registered_views:
             return
-        path = self.cache.ensure_parquet(view_name)
+        try:
+            path = self.cache.ensure_parquet(view_name)
+        except FileNotFoundError:
+            logger.debug(
+                "Skipping view %s: parquet file not available", view_name
+            )
+            return
         # Use forward slashes for DuckDB compatibility
         path_str = str(path).replace("\\", "/")
 

@@ -27,6 +27,10 @@ class PriceQuery:
         """Register the all_prices_today parquet view if not already done."""
         self._conn.ensure_views("all_prices_today")
 
+    def _has_prices(self) -> bool:
+        """Check if the price view was successfully registered."""
+        return "all_prices_today" in self._conn._registered_views
+
     def get(self, uuid: str) -> dict | None:
         """Get full price data for a card UUID.
 
@@ -289,6 +293,9 @@ class PriceQuery:
             ``cheapest_number``, ``cheapest_uuid``, ``min_price``.
         """
         self._ensure()
+        if not self._has_prices():
+            return []
+        
         self._conn.ensure_views("cards")
 
         sql = (

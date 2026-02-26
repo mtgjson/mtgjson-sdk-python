@@ -181,6 +181,8 @@ class SetQuery:
             card_count, and date — or None if no price data exists.
         """
         self._conn.ensure_views("cards", "all_prices_today")
+        if "all_prices_today" not in self._conn._registered_views:
+            return None
 
         sql = """
             SELECT

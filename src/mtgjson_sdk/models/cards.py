@@ -221,6 +221,10 @@ class CardSet(CardPrintingFull):
         default=None, alias="sourceProducts"
     )
 
+    # Booster simulation metadata (populated by open_pack(), None otherwise)
+    is_foil: bool | None = Field(default=None, alias="isFoil")
+    booster_sheet: str | None = Field(default=None, alias="boosterSheet")
+
 
 class CardDeck(CardPrintingFull):
     """Card in a preconstructed deck, with count and foil/etched flags."""
