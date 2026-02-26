@@ -3,18 +3,27 @@
 from __future__ import annotations
 
 import random
+from typing import Any
 
 from ..connection import Connection
 from ..models.cards import CardSet
 from ..models.submodels import BoosterConfig, BoosterPack, BoosterSheet
 
+# Views needed for flat booster tables (available from CDN)
+_BOOSTER_VIEWS = (
+    "set_booster_content_weights",
+    "set_booster_contents",
+    "set_booster_sheets",
+    "set_booster_sheet_cards",
+)
+
 
 class BoosterSimulator:
     """Simulates opening booster packs using set booster configuration data.
 
-    Uses weighted random selection based on the ``booster`` field in set
-    data (sheet weights and card weights). Requires the ``booster`` column
-    (present in AllPrintings, but NOT in the flat ``sets.parquet`` from CDN).
+    Uses weighted random selection based on official MTGJSON booster
+    configuration.  Loads data from flat booster parquet files (CDN) or
+    falls back to the nested ``booster`` column in AllPrintings.
 
     Example::
 
@@ -25,23 +34,132 @@ class BoosterSimulator:
 
     def __init__(self, conn: Connection) -> None:
         self._conn = conn
+        self._config_cache: dict[str, dict[str, BoosterConfig] | None] = {}
+        # Card data cache: (set_code, booster_type) -> {uuid: row_dict}
+        self._card_cache: dict[tuple[str, str], dict[str, dict[str, Any]]] = {}
 
-    def _ensure(self) -> None:
-        self._conn.ensure_views("sets", "cards")
+    def _ensure_booster_views(self) -> None:
+        self._conn.ensure_views(*_BOOSTER_VIEWS)
+
+    def _has_flat_views(self) -> bool:
+        return all(v in self._conn._registered_views for v in _BOOSTER_VIEWS)
 
     def _get_booster_config(self, set_code: str) -> dict[str, BoosterConfig] | None:
         """Get booster configuration for a set.
 
-        Requires the booster column (present in AllPrintings or test data,
-        but NOT in the flat sets.parquet from CDN).
+        Tries flat booster tables first, then falls
+        back to the nested booster column.
+        Results are cached per set code.
         """
-        self._ensure()
+        code = set_code.upper()
+        if code in self._config_cache:
+            return self._config_cache[code]
+
+        config = self._get_config_from_flat(code)
+        if not config:
+            config = self._get_config_from_nested(code)
+
+        self._config_cache[code] = config
+        return config
+
+    def _get_config_from_flat(self, set_code: str) -> dict[str, BoosterConfig] | None:
+        """Build booster config from the flat normalized parquet tables."""
+        self._ensure_booster_views()
+        if not self._has_flat_views():
+            return None
+
+        weights = self._conn.execute(
+            "SELECT boosterName, boosterIndex, boosterWeight "
+            "FROM set_booster_content_weights WHERE setCode = $1",
+            [set_code],
+        )
+        if not weights:
+            return None
+
+        contents = self._conn.execute(
+            "SELECT boosterName, boosterIndex, sheetName, sheetPicks "
+            "FROM set_booster_contents WHERE setCode = $1",
+            [set_code],
+        )
+        sheets_meta = self._conn.execute(
+            "SELECT boosterName, sheetName, sheetIsFoil, "
+            "sheetHasBalanceColors, sheetTotalWeight "
+            "FROM set_booster_sheets WHERE setCode = $1",
+            [set_code],
+        )
+        sheet_cards = self._conn.execute(
+            "SELECT boosterName, sheetName, cardUuid, cardWeight "
+            "FROM set_booster_sheet_cards WHERE setCode = $1",
+            [set_code],
+        )
+
+        # Reconstruct nested BoosterConfig from flat rows
+        result: dict[str, BoosterConfig] = {}
+        booster_names = {r["boosterName"] for r in weights}
+
+        for bname in sorted(booster_names):
+            # --- Pack templates ---
+            bw = [r for r in weights if r["boosterName"] == bname]
+            bc = [r for r in contents if r["boosterName"] == bname]
+
+            # Group sheet picks by booster index
+            idx_contents: dict[int, dict[str, int]] = {}
+            for r in bc:
+                idx_contents.setdefault(r["boosterIndex"], {})[r["sheetName"]] = (
+                    r["sheetPicks"]
+                )
+
+            boosters: list[BoosterPack] = []
+            total_weight = 0
+            for r in bw:
+                boosters.append(
+                    {
+                        "contents": idx_contents.get(r["boosterIndex"], {}),
+                        "weight": r["boosterWeight"],
+                    }
+                )
+                total_weight += r["boosterWeight"]
+
+            # --- Sheets ---
+            sm = [r for r in sheets_meta if r["boosterName"] == bname]
+            sc = [r for r in sheet_cards if r["boosterName"] == bname]
+
+            sheets: dict[str, BoosterSheet] = {}
+            for r in sm:
+                sname = r["sheetName"]
+                cards = {
+                    c["cardUuid"]: c["cardWeight"]
+                    for c in sc
+                    if c["sheetName"] == sname
+                }
+                sheet: BoosterSheet = {
+                    "cards": cards,
+                    "foil": r["sheetIsFoil"],
+                    "totalWeight": r["sheetTotalWeight"],
+                }
+                if r["sheetHasBalanceColors"]:
+                    sheet["balanceColors"] = True
+                sheets[sname] = sheet
+
+            result[bname] = {
+                "boosters": boosters,
+                "boostersTotalWeight": total_weight,
+                "sheets": sheets,
+                "sourceSetCodes": [set_code],
+            }
+
+        return result if result else None
+
+    def _get_config_from_nested(
+        self, set_code: str
+    ) -> dict[str, BoosterConfig] | None:
+        """Fall back to the nested booster column in AllPrintings / test data."""
+        self._conn.ensure_views("sets")
         try:
             rows = self._conn.execute(
-                "SELECT booster FROM sets WHERE code = $1", [set_code.upper()]
+                "SELECT booster FROM sets WHERE code = $1", [set_code]
             )
         except Exception:
-            # booster column may not exist in flat sets.parquet
             return None
         if not rows or not rows[0].get("booster"):
             return None
@@ -62,6 +180,37 @@ class BoosterSimulator:
             return []
         return list(config.keys())
 
+    def _ensure_card_cache(self, set_code: str, booster_type: str) -> None:
+        """Pre-fetch all cards that can appear in a booster type.
+
+        Collects every UUID across all sheets for the given booster type
+        and fetches their card data in a single DuckDB query.  Subsequent
+        ``open_pack`` calls resolve cards from this cache instead of
+        issuing per-pack queries.
+        """
+        key = (set_code.upper(), booster_type)
+        if key in self._card_cache:
+            return
+
+        config = self._get_booster_config(set_code)
+        if not config or booster_type not in config:
+            return
+
+        all_uuids: set[str] = set()
+        for sheet in config[booster_type]["sheets"].values():
+            all_uuids.update(sheet["cards"].keys())
+
+        if not all_uuids:
+            self._card_cache[key] = {}
+            return
+
+        self._conn.ensure_views("cards")
+        uuid_list = list(all_uuids)
+        placeholders = ", ".join(f"${i + 1}" for i in range(len(uuid_list)))
+        sql = f"SELECT * FROM cards WHERE uuid IN ({placeholders})"
+        rows = self._conn.execute(sql, uuid_list)
+        self._card_cache[key] = {r["uuid"]: r for r in rows}
+
     def open_pack(
         self,
         set_code: str,
@@ -70,6 +219,15 @@ class BoosterSimulator:
         as_dict: bool = False,
     ) -> list[CardSet] | list[dict]:
         """Simulate opening a single booster pack.
+
+        Each card in the returned list includes ``isFoil`` (whether the
+        card was pulled from a foil sheet) and ``boosterSheet`` (the
+        sheet name it came from).
+
+        On the first call for a given set/booster-type pair, all eligible
+        cards are pre-fetched in a single query.  Subsequent packs
+        resolve cards from the in-memory cache, making bulk simulation
+        (e.g. 1000+ packs) fast.
 
         Args:
             set_code: The set code (e.g., "MH3").
@@ -89,30 +247,36 @@ class BoosterSimulator:
                 f"Available: {list(configs.keys()) if configs else []}"
             )
 
+        # Pre-fetch card data on first call (single DuckDB query)
+        self._ensure_card_cache(set_code, booster_type)
+        card_data = self._card_cache.get((set_code.upper(), booster_type), {})
+
         config = configs[booster_type]
         pack_template = _pick_pack(config["boosters"])
         sheets = config["sheets"]
 
-        card_uuids: list[str] = []
+        # Track (uuid, sheet_name, is_foil) per pick so downstream
+        # code can distinguish foil vs non-foil slots.
+        picks: list[tuple[str, str, bool]] = []
         for sheet_name, count in pack_template["contents"].items():
             if sheet_name not in sheets:
                 continue
             sheet = sheets[sheet_name]
             picked = _pick_from_sheet(sheet, count)
-            card_uuids.extend(picked)
+            is_foil = sheet.get("foil", False)
+            picks.extend((uuid, sheet_name, is_foil) for uuid in picked)
 
-        if not card_uuids:
+        if not picks:
             return []
 
-        # Fetch card data
-        self._conn.ensure_views("cards")
-        placeholders = ", ".join(f"${i + 1}" for i in range(len(card_uuids)))
-        sql = f"SELECT * FROM cards WHERE uuid IN ({placeholders})"
-        rows = self._conn.execute(sql, card_uuids)
-
-        # Preserve pack order
-        uuid_to_row: dict[str, dict] = {r["uuid"]: r for r in rows}
-        ordered = [uuid_to_row[u] for u in card_uuids if u in uuid_to_row]
+        # Resolve cards from cache and inject sheet metadata
+        ordered = []
+        for uuid, sheet_name, is_foil in picks:
+            if uuid in card_data:
+                card = dict(card_data[uuid])
+                card["isFoil"] = is_foil
+                card["boosterSheet"] = sheet_name
+                ordered.append(card)
 
         if as_dict:
             return ordered
