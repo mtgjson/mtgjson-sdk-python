@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "mtgjson-sdk-python"
+name = "mtgjson-sdk"
 version = "0.1.0"
 description = "Query client for MTGJSON card data"
 readme = "README.md"
@@ -45,7 +45,7 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/mtgjson_sdk"]
+packages = ["mtgjson_sdk"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -53,7 +53,7 @@ testpaths = ["tests"]
 [tool.ruff]
 target-version = "py311"
 line-length = 88
-src = ["src", "tests"]
+src = [".", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP"]

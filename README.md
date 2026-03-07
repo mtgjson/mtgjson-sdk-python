@@ -16,11 +16,14 @@ Unlike traditional SDKs that rely on rate-limited REST APIs, `mtgjson-sdk` imple
 ## Install
 
 ```bash
-# Basic installation
 pip install mtgjson-sdk
+```
 
-# With Polars support for large-scale data analysis
-pip install "mtgjson-sdk[polars]"
+With optional extras:
+
+```bash
+pip install mtgjson-sdk[polars]   # Polars DataFrame support
+pip install mtgjson-sdk[all]      # All optional dependencies
 ```
 
 ## Quick Start
@@ -358,8 +361,13 @@ git clone https://github.com/mtgjson/mtgjson-sdk-python.git
 cd mtgjson-sdk-python
 uv sync --group dev
 uv run pytest
-uv run ruff check src/ tests/
-uv run ruff format src/ tests/
+```
+
+### Code Style
+
+```bash
+uv run ruff check mtgjson_sdk/ tests/
+uv run ruff format mtgjson_sdk/ tests/
 ```
 
 ## License
