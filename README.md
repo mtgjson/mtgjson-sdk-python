@@ -1,5 +1,9 @@
 # mtgjson-sdk
 
+[![PyPI](https://img.shields.io/pypi/v/mtgjson-sdk)](https://pypi.org/project/mtgjson-sdk/)
+[![Python](https://img.shields.io/pypi/pyversions/mtgjson-sdk)](https://pypi.org/project/mtgjson-sdk/)
+[![License](https://img.shields.io/pypi/l/mtgjson-sdk)](https://pypi.org/project/mtgjson-sdk/)
+
 A high-performance, DuckDB-backed Python query client for [MTGJSON](https://mtgjson.com).
 
 Unlike traditional SDKs that rely on rate-limited REST APIs, `mtgjson-sdk` implements a local data warehouse architecture. It synchronizes optimized Parquet data from the MTGJSON CDN to your local machine, utilizing DuckDB to execute complex analytics, fuzzy searches, and booster simulations with sub-millisecond latency.
