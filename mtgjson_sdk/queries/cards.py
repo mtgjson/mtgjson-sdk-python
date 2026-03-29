@@ -259,7 +259,10 @@ class CardQuery:
             q.where_eq("layout", layout)
 
         if is_promo is not None:
-            q.where_eq("isPromo", is_promo)
+            if is_promo:
+                q.where_eq("isPromo", True)
+            else:
+                q._where.append("(isPromo IS NULL OR isPromo = false)")
 
         if colors:
             for color in colors:
