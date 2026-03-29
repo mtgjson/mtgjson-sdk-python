@@ -28,6 +28,7 @@ class Deck(BaseModel):
     model_config = {"populate_by_name": True}
 
     code: str = Field(description="The printing set code for the deck.")
+    set_code: str | None = Field(default=None, alias="setCode")
     name: str = Field(description="The name of the deck.")
     type: str = Field(description="The type of deck.")
     release_date: str | None = Field(default=None, alias="releaseDate")

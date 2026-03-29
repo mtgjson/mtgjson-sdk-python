@@ -86,6 +86,12 @@ _IGNORED_COLUMNS = frozenset(
         "format",
         "uris",
         "scryfallUri",
+        "contents",
+        "tokens",
+        "planes",
+        "schemes",
+        "sealedProductUuids",
+        "sourceSetCodes",
     }
 )
 
@@ -103,6 +109,16 @@ _JSON_CAST_COLUMNS = frozenset(
         "sourceProducts",
         "foreignData",
         "translations",
+        "contents",
+        "tokens",
+        "planes",
+        "schemes",
+        "sealedProductUuids",
+        "sourceSetCodes",
+        "mainBoard",
+        "sideBoard",
+        "commander",
+        "displayCommander",
     }
 )
 
@@ -357,7 +373,7 @@ class Connection:
         for row in rows:
             d: dict[str, Any] = {}
             for col, val in zip(columns, row):
-                d[col] = _coerce_dates(val)
+                d[col] = _coerce_values(val)
             out.append(d)
         return out
 
@@ -470,14 +486,26 @@ class Connection:
         return self._conn
 
 
-def _coerce_dates(val: Any) -> Any:
-    """Recursively convert date/datetime objects to ISO strings."""
-    import datetime
+def _coerce_values(val: Any) -> Any:
+    """Recursively convert DuckDB types to Python-native types.
 
+    - date/datetime → ISO strings
+    - JSON strings (starting with ``{`` or ``[``) → parsed objects
+    """
+    import datetime
+    import json as _json
+
+    if isinstance(val, str):
+        if val and val[0] in ("{", "["):
+            try:
+                return _json.loads(val)
+            except (ValueError, _json.JSONDecodeError):
+                pass
+        return val
     if isinstance(val, (datetime.date, datetime.datetime)):
         return val.isoformat()
     if isinstance(val, dict):
-        return {k: _coerce_dates(v) for k, v in val.items()}
+        return {k: _coerce_values(v) for k, v in val.items()}
     if isinstance(val, list):
-        return [_coerce_dates(item) for item in val]
+        return [_coerce_values(item) for item in val]
     return val

@@ -5,6 +5,7 @@ from __future__ import annotations
 import gzip
 import json
 import logging
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -48,6 +49,8 @@ class CacheManager:
         self._client: httpx.Client | None = None
         self._remote_version: str | None = None
         self._on_progress = on_progress
+        self._in_flight: dict[str, threading.Event] = {}
+        self._in_flight_lock = threading.Lock()
 
     @property
     def client(self) -> httpx.Client:
@@ -138,6 +141,38 @@ class CacheManager:
             tmp_dest.unlink(missing_ok=True)
             raise
 
+    def _ensure_file(self, filename: str, local_path: Path) -> Path:
+        """Deduplicated download: if another thread is already downloading
+        the same file, block until it finishes instead of starting a second
+        download.
+        """
+        with self._in_flight_lock:
+            event = self._in_flight.get(filename)
+            if event is not None:
+                # Another thread is downloading — wait for it
+                pass
+            else:
+                event = threading.Event()
+                self._in_flight[filename] = event
+                event = None  # signals "we are the downloader"
+
+        if event is not None:
+            # Wait for the in-flight download to finish
+            event.wait()
+            return local_path
+
+        try:
+            self._download_file(filename, local_path)
+            version = self.remote_version()
+            if version:
+                self._save_version(version)
+        finally:
+            with self._in_flight_lock:
+                evt = self._in_flight.pop(filename, None)
+                if evt is not None:
+                    evt.set()
+        return local_path
+
     def ensure_parquet(self, view_name: str) -> Path:
         """Ensure a parquet file is cached locally, downloading if needed.
 
@@ -160,11 +195,7 @@ class CacheManager:
                 raise FileNotFoundError(
                     f"Parquet file {filename} not cached and offline mode is enabled"
                 )
-            self._download_file(filename, local_path)
-            # Update version after successful download
-            version = self.remote_version()
-            if version:
-                self._save_version(version)
+            self._ensure_file(filename, local_path)
         return local_path
 
     def ensure_json(self, name: str) -> Path:
@@ -189,10 +220,7 @@ class CacheManager:
                 raise FileNotFoundError(
                     f"JSON file {filename} not cached and offline mode is enabled"
                 )
-            self._download_file(filename, local_path)
-            version = self.remote_version()
-            if version:
-                self._save_version(version)
+            self._ensure_file(filename, local_path)
         return local_path
 
     def load_json(self, name: str) -> dict:

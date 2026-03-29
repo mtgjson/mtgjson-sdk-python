@@ -539,6 +539,83 @@ SAMPLE_FOREIGN_DATA = [
     },
 ]
 
+SAMPLE_SEALED_PRODUCTS = [
+    {
+        "setCode": "A25",
+        "cardCount": 24,
+        "category": "booster_box",
+        "contents": '{"pack":[{"code":"draft","set":"A25"}]}',
+        "identifiers": '{"tcgplayerProductId":"162583"}',
+        "name": "Masters 25 Booster Box",
+        "productSize": 24,
+        "purchaseUrls": '{"tcgplayer":"https://mtgjson.com/links/example1"}',
+        "releaseDate": "2018-03-16",
+        "subtype": None,
+        "uuid": "sealed-uuid-001",
+    },
+    {
+        "setCode": "A25",
+        "cardCount": 15,
+        "category": "booster_pack",
+        "contents": '{"card":[{"name":"Lightning Bolt","set":"A25","uuid":"card-uuid-001"}]}',
+        "identifiers": '{"tcgplayerProductId":"162584"}',
+        "name": "Masters 25 Booster Pack",
+        "productSize": 15,
+        "purchaseUrls": '{"tcgplayer":"https://mtgjson.com/links/example2"}',
+        "releaseDate": "2018-03-16",
+        "subtype": None,
+        "uuid": "sealed-uuid-002",
+    },
+    {
+        "setCode": "MH2",
+        "cardCount": 12,
+        "category": "booster_box",
+        "contents": '{"pack":[{"code":"set","set":"MH2"}]}',
+        "identifiers": '{"tcgplayerProductId":"249892"}',
+        "name": "MH2 Set Booster Box",
+        "productSize": 30,
+        "purchaseUrls": '{"tcgplayer":"https://mtgjson.com/links/example3"}',
+        "releaseDate": "2021-06-18",
+        "subtype": None,
+        "uuid": "sealed-uuid-003",
+    },
+]
+
+SAMPLE_SET_DECKS = [
+    {
+        "setCode": "A25",
+        "code": "A25_DECK1",
+        "name": "Masters 25 Draft Deck",
+        "type": "Draft Deck",
+        "releaseDate": "2018-03-16",
+        "sealedProductUuids": '["sealed-uuid-001"]',
+        "sourceSetCodes": '["A25"]',
+        "mainBoard": '[{"uuid":"card-uuid-001","count":4},{"uuid":"card-uuid-003","count":2}]',
+        "sideBoard": '[{"uuid":"card-uuid-002","count":1}]',
+        "commander": "[]",
+        "displayCommander": "[]",
+        "tokens": '[{"uuid":"token-uuid-001","count":3}]',
+        "planes": "[]",
+        "schemes": "[]",
+    },
+    {
+        "setCode": "MH2",
+        "code": "MH2_DECK1",
+        "name": "Modern Horizons 2 Theme Deck",
+        "type": "Theme Deck",
+        "releaseDate": "2021-06-18",
+        "sealedProductUuids": '["sealed-uuid-003"]',
+        "sourceSetCodes": '["MH2"]',
+        "mainBoard": '[{"uuid":"card-uuid-002","count":4}]',
+        "sideBoard": "[]",
+        "commander": "[]",
+        "displayCommander": "[]",
+        "tokens": "[]",
+        "planes": "[]",
+        "schemes": "[]",
+    },
+]
+
 SAMPLE_LEGALITIES = [
     {"uuid": "card-uuid-001", "format": "modern", "status": "Legal"},
     {"uuid": "card-uuid-001", "format": "legacy", "status": "Legal"},
@@ -571,6 +648,8 @@ def sample_db(tmp_path):
     conn.register_table_from_data("card_identifiers", SAMPLE_IDENTIFIERS)
     conn.register_table_from_data("card_legalities", SAMPLE_LEGALITIES)
     conn.register_table_from_data("card_foreign_data", SAMPLE_FOREIGN_DATA)
+    conn.register_table_from_data("sealed_products", SAMPLE_SEALED_PRODUCTS)
+    conn.register_table_from_data("set_decks", SAMPLE_SET_DECKS)
 
     yield conn
 
@@ -590,6 +669,8 @@ def sdk_offline(tmp_path):
     sdk._conn.register_table_from_data("card_identifiers", SAMPLE_IDENTIFIERS)
     sdk._conn.register_table_from_data("card_legalities", SAMPLE_LEGALITIES)
     sdk._conn.register_table_from_data("card_foreign_data", SAMPLE_FOREIGN_DATA)
+    sdk._conn.register_table_from_data("sealed_products", SAMPLE_SEALED_PRODUCTS)
+    sdk._conn.register_table_from_data("set_decks", SAMPLE_SET_DECKS)
 
     yield sdk
 
